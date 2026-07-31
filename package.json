@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "postinstall": "node -e \"const fs=require('fs');const f='node_modules/tr46/index.js';if(fs.existsSync(f)){let c=fs.readFileSync(f,'utf8');c=c.replace(/require\\(\"punycode\/\"\\)/g,'require(\"punycode\")');fs.writeFileSync(f,c);}\""
+    "postinstall": "node scripts/patch-tr46.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
