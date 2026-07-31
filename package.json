@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "postinstall": "node scripts/patch-tr46.js"
+    "postinstall": "node scripts/patch-tr46.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
