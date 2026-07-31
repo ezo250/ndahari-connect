@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { MongoClient, type Document } from "mongodb";
 
 const DEFAULT_URI =
-  "mongodb://ernestekubwimana24snhu_db_user:Ishoborabyose24980@cluster0.v6zt99j.mongodb.net:27017/ndahari?authSource=admin&retryWrites=true&w=majority&directConnection=true";
+  "mongodb+srv://ernestekubwimana24snhu_db_user:Ishoborabyose24980@cluster0.v6zt99j.mongodb.net/ndahari?retryWrites=true&w=majority";
 const DB_NAME = "ndahari";
 
 let clientPromise: Promise<MongoClient> | null = null;
@@ -17,8 +17,6 @@ async function getClient() {
       serverSelectionTimeoutMS: 30000,
       connectTimeoutMS: 30000,
       socketTimeoutMS: 30000,
-      tls: true,
-      tlsAllowInvalidCertificates: false,
     }).connect();
   }
   return clientPromise;
