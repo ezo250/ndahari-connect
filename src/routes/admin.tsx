@@ -7,7 +7,7 @@ import { CATEGORIES } from "@/lib/constants";
 import { loadSettings } from "@/lib/settings";
 import {
   Users, ClipboardList, Briefcase, FileCheck, MessageSquare,
-  Settings as SettingsIcon, Check, X, Plus, Zap, KeyRound, DollarSign,
+  Settings as SettingsIcon, Check, X, Plus, Zap, KeyRound, DollarSign, Video,
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
@@ -76,102 +76,190 @@ function AdminPanel() {
   );
 }
 
+const EMPTY_FORM = {
+  first_name: "", last_name: "", email: "", password: "",
+  phone: "", role: "employee" as string, category: "driver",
+  location_text: "", price_fee: "", video_url: "", status: "active",
+};
+
 function UsersTab() {
   const { t } = useI18n();
-  const [emps, setEmps] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
   const [editPrice, setEditPrice] = useState<{ id: string; val: string } | null>(null);
+  const [err, setErr] = useState("");
 
   const load = async () => {
-    const { data: e } = await supabase
-      .from("employee_profiles")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (!e?.length) { setEmps([]); return; }
-    const { data: p } = await supabase
-      .from("users")
-      .select("*")
-      .in("id", (e as any[]).map((x) => x.user_id));
-    const map = new Map(((p ?? []) as any[]).map((x) => [x.id, x]));
-    setEmps((e as any[]).map((x) => ({ ...x, profile: map.get(x.user_id) })));
+    const { data } = await supabase.from("users").select("*").order("created_at", { ascending: false });
+    setUsers((data ?? []) as any[]);
   };
 
   useEffect(() => { load(); }, []);
 
-  const setStatus = async (uid: string, status: string) => {
-    const update: any = { status };
-    if (status === "active") {
-      const days = 30;
-      const exp = new Date();
-      exp.setDate(exp.getDate() + days);
-      update.subscription_expires_at = exp.toISOString();
+  const f = (k: keyof typeof EMPTY_FORM) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  const addUser = async () => {
+    setErr("");
+    if (!form.first_name || !form.last_name || !form.email || !form.password) {
+      setErr("First name, last name, email and password are required."); return;
     }
-    await supabase.from("employee_profiles").update(update).eq("user_id", uid);
+    setSaving(true);
+    // Use direct API to create user
+    const res = await fetch("/api/ndahari", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "auth", subAction: "signup",
+        email: form.email, password: form.password,
+        role: form.role, first_name: form.first_name, last_name: form.last_name, phone: form.phone,
+      }),
+    }).then((r) => r.json());
+    if (res?.error) { setErr(res.error.message); setSaving(false); return; }
+    const userId = res?.data?.user?.id;
+    if (userId && (form.price_fee || form.category || form.location_text || form.video_url)) {
+      const extra: Record<string, unknown> = { category: form.category, status: form.status };
+      if (form.location_text) extra.location_text = form.location_text;
+      if (form.price_fee) extra.price_fee = Number(form.price_fee);
+      if (form.video_url) extra.video_url = form.video_url;
+      await supabase.from("users").update(extra).eq("id", userId);
+    }
+    setForm(EMPTY_FORM);
+    setShowForm(false);
+    setSaving(false);
     load();
   };
 
-  const savePrice = async (uid: string, price: string) => {
-    await supabase.from("employee_profiles").update({ price_fee: Number(price) }).eq("user_id", uid);
+  const setStatus = async (id: string, status: string) => {
+    await supabase.from("users").update({ status }).eq("id", id);
+    load();
+  };
+
+  const savePrice = async (id: string, price: string) => {
+    await supabase.from("users").update({ price_fee: Number(price) }).eq("id", id);
     setEditPrice(null);
     load();
   };
 
+  const deleteUser = async (id: string) => {
+    if (!confirm("Delete this user?")) return;
+    await supabase.from("users").delete().eq("id", id);
+    load();
+  };
+
   return (
-    <div className="space-y-3">
-      {emps.map((e) => (
-        <div key={e.user_id} className="rounded-lg border p-4 bg-card space-y-2">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <div className="font-semibold">
-                {e.profile?.first_name} {e.profile?.last_name}{" "}
-                <span className="text-xs text-muted-foreground">· {e.profile?.email}</span>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {CATEGORIES.find((c) => c.id === e.category)?.emoji} {t(`cat.${e.category}` as any)} · {e.location_text} · 📞 {e.profile?.phone}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs px-2 py-1 rounded-full bg-secondary">{t(`status.${e.status}` as any)}</span>
-              {e.status !== "active" && (
-                <button onClick={() => setStatus(e.user_id, "active")} className="px-2 py-1 rounded-md bg-success/20 text-success text-xs font-medium flex items-center gap-1">
-                  <Check className="w-3 h-3" /> {t("admin.activate")}
-                </button>
-              )}
-              {e.status !== "suspended" && (
-                <button onClick={() => setStatus(e.user_id, "suspended")} className="px-2 py-1 rounded-md bg-destructive/20 text-destructive text-xs font-medium flex items-center gap-1">
-                  <X className="w-3 h-3" /> {t("admin.deactivate")}
-                </button>
-              )}
-            </div>
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="font-semibold text-lg">All Users ({users.length})</h2>
+        <button onClick={() => setShowForm((v) => !v)} className="px-3 py-2 rounded-lg gradient-hero text-primary-foreground text-sm flex items-center gap-1">
+          <Plus className="w-4 h-4" /> Add User
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="rounded-lg border p-4 bg-card space-y-3">
+          <h3 className="font-semibold">New User</h3>
+          <div className="grid grid-cols-2 gap-2">
+            <input placeholder="First name *" value={form.first_name} onChange={f("first_name")} className="px-3 py-2 rounded-lg bg-background border text-sm" />
+            <input placeholder="Last name *" value={form.last_name} onChange={f("last_name")} className="px-3 py-2 rounded-lg bg-background border text-sm" />
+            <input placeholder="Email *" type="email" value={form.email} onChange={f("email")} className="px-3 py-2 rounded-lg bg-background border text-sm" />
+            <input placeholder="Password *" type="password" value={form.password} onChange={f("password")} className="px-3 py-2 rounded-lg bg-background border text-sm" />
+            <input placeholder="Phone" value={form.phone} onChange={f("phone")} className="px-3 py-2 rounded-lg bg-background border text-sm" />
+            <select value={form.role} onChange={f("role")} className="px-3 py-2 rounded-lg bg-background border text-sm">
+              <option value="employee">Employee</option>
+              <option value="employer">Employer</option>
+            </select>
           </div>
-          {/* Admin sets price */}
-          <div className="flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-muted-foreground" />
-            {editPrice?.id === e.user_id ? (
-              <>
-                <input
-                  type="number"
-                  value={editPrice.val}
-                  onChange={(ev) => setEditPrice({ id: e.user_id, val: ev.target.value })}
-                  className="w-28 px-2 py-1 rounded-md bg-background border text-sm"
-                />
-                <button onClick={() => savePrice(e.user_id, editPrice.val)} className="px-2 py-1 rounded-md bg-primary text-primary-foreground text-xs">Save</button>
-                <button onClick={() => setEditPrice(null)} className="px-2 py-1 rounded-md bg-secondary text-xs">Cancel</button>
-              </>
-            ) : (
-              <>
-                <span className="text-sm font-medium">{Number(e.price_fee ?? 0).toLocaleString()} RWF</span>
-                <button
-                  onClick={() => setEditPrice({ id: e.user_id, val: String(e.price_fee ?? 0) })}
-                  className="px-2 py-1 rounded-md bg-secondary text-xs"
-                >
-                  Set price
-                </button>
-              </>
-            )}
+          {form.role === "employee" && (
+            <div className="grid grid-cols-2 gap-2">
+              <select value={form.category} onChange={f("category")} className="px-3 py-2 rounded-lg bg-background border text-sm">
+                {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.emoji} {t(`cat.${c.id}` as any)}</option>)}
+              </select>
+              <input placeholder="Location" value={form.location_text} onChange={f("location_text")} className="px-3 py-2 rounded-lg bg-background border text-sm" />
+              <input placeholder="Price (RWF)" type="number" value={form.price_fee} onChange={f("price_fee")} className="px-3 py-2 rounded-lg bg-background border text-sm" />
+              <select value={form.status} onChange={f("status")} className="px-3 py-2 rounded-lg bg-background border text-sm">
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="suspended">Suspended</option>
+              </select>
+              <div className="col-span-2">
+                <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1"><Video className="w-3 h-3" /> Proof video URL (YouTube or direct link)</label>
+                <input placeholder="https://youtube.com/watch?v=..." value={form.video_url} onChange={f("video_url")} className="w-full px-3 py-2 rounded-lg bg-background border text-sm" />
+              </div>
+            </div>
+          )}
+          {err && <div className="text-sm text-destructive">{err}</div>}
+          <div className="flex gap-2">
+            <button onClick={addUser} disabled={saving} className="px-4 py-2 rounded-lg gradient-hero text-primary-foreground text-sm disabled:opacity-60">{saving ? "Saving…" : "Create User"}</button>
+            <button onClick={() => { setShowForm(false); setErr(""); setForm(EMPTY_FORM); }} className="px-4 py-2 rounded-lg bg-secondary text-sm">Cancel</button>
           </div>
         </div>
-      ))}
-      {emps.length === 0 && <div className="text-sm text-muted-foreground">No workers yet.</div>}
+      )}
+
+      <div className="space-y-3">
+        {users.filter((u) => u.role !== "admin").map((u) => (
+          <div key={u.id} className="rounded-lg border p-4 bg-card space-y-2">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="font-semibold">
+                  {u.first_name} {u.last_name}
+                  <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-secondary">{u.role}</span>
+                  <span className="ml-1 text-xs text-muted-foreground">· {u.email}</span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {u.category && <>{CATEGORIES.find((c) => c.id === u.category)?.emoji} {t(`cat.${u.category}` as any)} · </>}
+                  {u.location_text && <>{u.location_text} · </>}
+                  📞 {u.phone}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs px-2 py-1 rounded-full bg-secondary">{u.status ?? "active"}</span>
+                {u.status !== "active" && (
+                  <button onClick={() => setStatus(u.id, "active")} className="px-2 py-1 rounded-md bg-success/20 text-success text-xs flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Activate
+                  </button>
+                )}
+                {u.status !== "suspended" && (
+                  <button onClick={() => setStatus(u.id, "suspended")} className="px-2 py-1 rounded-md bg-destructive/20 text-destructive text-xs flex items-center gap-1">
+                    <X className="w-3 h-3" /> Suspend
+                  </button>
+                )}
+                <button onClick={() => deleteUser(u.id)} className="px-2 py-1 rounded-md bg-destructive/20 text-destructive text-xs">Delete</button>
+              </div>
+            </div>
+
+            {u.role === "employee" && (
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-muted-foreground" />
+                  {editPrice?.id === u.id ? (
+                    <>
+                      <input type="number" value={editPrice.val} onChange={(ev) => setEditPrice({ id: u.id, val: ev.target.value })} className="w-28 px-2 py-1 rounded-md bg-background border text-sm" />
+                      <button onClick={() => savePrice(u.id, editPrice.val)} className="px-2 py-1 rounded-md bg-primary text-primary-foreground text-xs">Save</button>
+                      <button onClick={() => setEditPrice(null)} className="px-2 py-1 rounded-md bg-secondary text-xs">Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-sm font-medium">{Number(u.price_fee ?? 0).toLocaleString()} RWF</span>
+                      <button onClick={() => setEditPrice({ id: u.id, val: String(u.price_fee ?? 0) })} className="px-2 py-1 rounded-md bg-secondary text-xs">Set price</button>
+                    </>
+                  )}
+                </div>
+                {u.video_url && (
+                  <a href={u.video_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary underline">
+                    <Video className="w-3 h-3" /> View proof video
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+        {users.filter((u) => u.role !== "admin").length === 0 && (
+          <div className="text-sm text-muted-foreground">No users yet.</div>
+        )}
+      </div>
     </div>
   );
 }
